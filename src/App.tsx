@@ -232,7 +232,7 @@ export default function App() {
         } else {
           await new Promise<void>((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(turn.text);
-            utterance.lang = lang; utterance.rate = speaker?.rate ?? 1; utterance.pitch = speaker?.pitch ?? 1; utterance.volume = speaker?.volume ?? 1;
+            utterance.lang = lang; utterance.rate = effectiveSpeed; utterance.pitch = effectivePitch; utterance.volume = speaker?.volume ?? 1;
             const voice = voices.find(v => v.voiceURI === speaker?.voiceURI);
             if (voice) utterance.voice = voice;
             utterance.onend = () => resolve();
