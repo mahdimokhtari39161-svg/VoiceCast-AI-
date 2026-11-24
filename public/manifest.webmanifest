@@ -4,11 +4,16 @@
   "description": "استودیوی اجرای چندصدایی متن فارسی",
   "lang": "fa",
   "dir": "rtl",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0c111d",
   "theme_color": "#101522",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
