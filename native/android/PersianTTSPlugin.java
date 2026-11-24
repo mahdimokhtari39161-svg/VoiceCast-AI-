@@ -97,7 +97,7 @@ public class PersianTTSPlugin extends Plugin {
                     track.write(pcm, 0, count);
                 }
                 if (token == runToken.get()) {
-                    while (track.getPlayState() == AudioTrack.PLAYSTATE_PLAYING && track.getPlaybackHeadPosition() < samples.length && token == runToken.get()) {
+                    while (track.getPlaybackHeadPosition() < samples.length && token == runToken.get()) {
                         try { Thread.sleep(35); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); break; }
                     }
                     call.resolve(new JSObject());
@@ -115,6 +115,20 @@ public class PersianTTSPlugin extends Plugin {
                 if (tts != null) tts.release();
             }
         });
+    }
+
+    @PluginMethod
+    public void pause(PluginCall call) {
+        AudioTrack current = audioTrack;
+        if (current != null) { try { current.pause(); } catch (Exception ignored) {} }
+        call.resolve(new JSObject());
+    }
+
+    @PluginMethod
+    public void resume(PluginCall call) {
+        AudioTrack current = audioTrack;
+        if (current != null) { try { current.play(); } catch (Exception ignored) {} }
+        call.resolve(new JSObject());
     }
 
     @PluginMethod
