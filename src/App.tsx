@@ -105,8 +105,8 @@ export default function App() {
   const estimatedSeconds = Math.max(1, Math.round(charCount / 12));
   const activeSpeaker = speakers.find(s => s.id === turns[currentTurn]?.speakerId);
 
-  function detectLanguage(text: string) { return /[\\u0600-\\u06FF]/.test(text) ? 'fa-IR' : 'en-US'; }
-  function languageIsAvailable(lang: string) { return supportedLanguages.some(item => item.toLowerCase() === lang.toLowerCase() || item.toLowerCase().startsWith(lang.split('-')[0].toLowerCase() + '-')); }
+  function detectLanguage(text: string) { return /[\u0600-\u06FF]/.test(text) ? 'fa-IR' : 'en-US'; }
+  function languageIsAvailable(lang: string) { return supportedLanguages.some(item => item.toLowerCase() === lang.toLowerCase() || item.toLowerCase() === lang.split('-')[0].toLowerCase() || item.toLowerCase().startsWith(lang.split('-')[0].toLowerCase() + '-')); }
   function updateSpeaker(id: number, patch: Partial<Speaker>) { setSpeakers(old => old.map(s => s.id === id ? { ...s, ...patch } : s)); }
   function updateTurn(id: number, patch: Partial<Turn>) { setTurns(old => old.map(t => t.id === id ? { ...t, ...patch } : t)); }
   function addSpeaker() {
@@ -319,7 +319,7 @@ export default function App() {
           <div className="range-line"><label>زیر و بمی</label><span>{speaker.pitch.toFixed(1)}</span></div><input className="range" type="range" min="0.6" max="1.5" step="0.1" value={speaker.pitch} onChange={e=>updateSpeaker(speaker.id,{pitch:Number(e.target.value)})}/>
           <div className="range-line"><label>بلندی صدا</label><span>{Math.round(speaker.volume*100)}٪</span></div><input className="range" type="range" min="0" max="1" step="0.05" value={speaker.volume} onChange={e=>updateSpeaker(speaker.id,{volume:Number(e.target.value)})}/>
           <label>حال‌وهوای نقش <span className="muted">(برچسب راهنما)</span></label><div className="chips small">{tones.map(t=><button key={t} className={speaker.tone===t?'chip active':'chip'} onClick={()=>updateSpeaker(speaker.id,{tone:t})}>{t}</button>)}</div>
-          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await TextToSpeech.stop();const vi=voices.findIndex(x=>x.voiceURI===speaker.voiceURI);await TextToSpeech.speak({text:`سلام. من ${speaker.name} هستم.`,lang:'fa-IR',rate:speaker.rate,pitch:speaker.pitch,volume:speaker.volume,...(vi>=0?{voice:vi}:{})});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
+          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await TextToSpeech.stop();const vi=voices.findIndex(x=>x.voiceURI===speaker.voiceURI && x.lang.toLowerCase().startsWith('fa'));await TextToSpeech.speak({text:`سلام. من ${speaker.name} هستم.`,lang:'fa-IR',rate:speaker.rate,pitch:speaker.pitch,volume:speaker.volume,...(vi>=0?{voice:vi}:{})});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
         </div>)}
         <button className="add-speaker" onClick={addSpeaker}><Plus size={16}/> افزودن گوینده</button>
       </aside>
