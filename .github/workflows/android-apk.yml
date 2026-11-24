@@ -32,6 +32,8 @@ jobs:
           npx capacitor-assets generate --android
       - name: Sync web assets
         run: npx cap sync android
+      - name: Add bundled offline Persian TTS engine and voices
+        run: bash scripts/prepare-android-tts.sh
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug
