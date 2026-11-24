@@ -31,6 +31,7 @@ function downloadBlob(blob: Blob, name: string) {
 
 export default function App() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
   const [speakers, setSpeakers] = useState<Speaker[]>(defaults);
   const [turns, setTurns] = useState<Turn[]>(sample);
   const [rawText, setRawText] = useState('');
@@ -58,8 +59,11 @@ export default function App() {
       }).catch(() => {
         if (active) setNotice('موتور گفتار گوشی در دسترس نیست؛ موتور تبدیل متن به گفتار را در تنظیمات اندروید فعال کنید.');
       });
+      TextToSpeech.getSupportedLanguages().then(result => {
+        if (active) setSupportedLanguages(result.languages || []);
+      }).catch(() => {});
       TextToSpeech.isLanguageSupported({ lang: 'fa-IR' }).then(result => {
-        if (active && !result.supported) setNotice('زبان فارسی در موتور گفتار گوشی نصب نیست. در تنظیمات تبدیل متن به گفتار، صدای فارسی را نصب کنید.');
+        if (active && !result.supported) setNotice('صدای فارسی روی موتور گفتار این گوشی پیدا نشد؛ متن انگلیسی همچنان قابل پخش است. برای افزودن فارسی از دکمهٔ «راه‌اندازی صدای فارسی» استفاده کن.');
       }).catch(() => {});
       return () => { active = false; void TextToSpeech.stop(); };
     }
@@ -101,6 +105,8 @@ export default function App() {
   const estimatedSeconds = Math.max(1, Math.round(charCount / 12));
   const activeSpeaker = speakers.find(s => s.id === turns[currentTurn]?.speakerId);
 
+  function detectLanguage(text: string) { return /[\\u0600-\\u06FF]/.test(text) ? 'fa-IR' : 'en-US'; }
+  function languageIsAvailable(lang: string) { return supportedLanguages.some(item => item.toLowerCase() === lang.toLowerCase() || item.toLowerCase().startsWith(lang.split('-')[0].toLowerCase() + '-')); }
   function updateSpeaker(id: number, patch: Partial<Speaker>) { setSpeakers(old => old.map(s => s.id === id ? { ...s, ...patch } : s)); }
   function updateTurn(id: number, patch: Partial<Turn>) { setTurns(old => old.map(t => t.id === id ? { ...t, ...patch } : t)); }
   function addSpeaker() {
@@ -194,19 +200,23 @@ export default function App() {
     for (const { turn, index } of queue) {
       if (run !== token.current) return;
       const speaker = speakers.find(s => s.id === turn.speakerId) || speakers[0];
+      const lang = detectLanguage(turn.text);
       setCurrentTurn(index);
       try {
         if (native) {
-          const voiceIndex = voices.findIndex(v => v.voiceURI === speaker?.voiceURI);
+          if (supportedLanguages.length && !languageIsAvailable(lang)) {
+            throw new Error(lang === 'fa-IR' ? 'PERSIAN_VOICE_MISSING' : 'VOICE_MISSING');
+          }
+          const voiceIndex = voices.findIndex(v => v.voiceURI === speaker?.voiceURI && v.lang.toLowerCase().startsWith(lang.split('-')[0]));
           await TextToSpeech.speak({
-            text: turn.text, lang: 'fa-IR', rate: speaker?.rate ?? 1,
+            text: turn.text, lang, rate: speaker?.rate ?? 1,
             pitch: speaker?.pitch ?? 1, volume: speaker?.volume ?? 1,
             ...(voiceIndex >= 0 ? { voice: voiceIndex } : {})
           });
         } else {
           await new Promise<void>((resolve, reject) => {
             const utterance = new SpeechSynthesisUtterance(turn.text);
-            utterance.lang = 'fa-IR'; utterance.rate = speaker?.rate ?? 1; utterance.pitch = speaker?.pitch ?? 1; utterance.volume = speaker?.volume ?? 1;
+            utterance.lang = lang; utterance.rate = speaker?.rate ?? 1; utterance.pitch = speaker?.pitch ?? 1; utterance.volume = speaker?.volume ?? 1;
             const voice = voices.find(v => v.voiceURI === speaker?.voiceURI);
             if (voice) utterance.voice = voice;
             utterance.onend = () => resolve();
@@ -217,7 +227,7 @@ export default function App() {
       } catch {
         if (run !== token.current) return;
         setPlaying(false); setPaused(false);
-        setNotice(native ? 'پخش ناموفق بود. صدای فارسی را در تنظیمات گفتار اندروید نصب یا فعال کنید.' : 'پخش این بخش با خطا روبه‌رو شد.');
+        setNotice(native ? (lang === 'fa-IR' ? 'صدای فارسی در موتور گفتار گوشی موجود یا فعال نیست. دکمهٔ «راه‌اندازی صدای فارسی» را بزن؛ متن انگلیسی با صدای انگلیسی اجرا می‌شود.' : 'صدای انگلیسی در موتور گفتار گوشی در دسترس نیست؛ موتور گفتار اندروید را بررسی کن.') : 'پخش این بخش با خطا روبه‌رو شد.');
         return;
       }
       if (run !== token.current) return;
@@ -299,7 +309,8 @@ export default function App() {
 
       <aside className="panel speakers-panel">
         <div className="section-head"><div><span className="step">۲</span><div><h2>گروه گویندگان</h2><p>{speakers.length} نقش تعریف شده</p></div></div><button className="icon-btn" onClick={addSpeaker} aria-label="افزودن گوینده"><Plus size={18}/></button></div>
-        <div className={persianVoices.length?'voice-note good':'voice-note'}><Volume2 size={16}/><span>{persianVoices.length ? `${persianVoices.length} صدای فارسی شناسایی شد` : 'صدای فارسی به امکانات گوشی وابسته است'}</span></div>
+        <div className={persianVoices.length?'voice-note good':'voice-note'}><Volume2 size={16}/><span>{persianVoices.length ? `${persianVoices.length} صدای فارسی شناسایی شد` : 'تشخیص خودکار فارسی و انگلیسی؛ صدای فارسی به موتور گفتار گوشی وابسته است'}</span></div>
+        {Capacitor.isNativePlatform() && <button className="test-voice" onClick={async()=>{try{await TextToSpeech.openInstall();setNotice('صفحهٔ راه‌اندازی موتور گفتار باز شد. اگر بستهٔ فارسی ارائه شد، آن را نصب کن.');}catch{setNotice('امکان باز کردن راه‌اندازی موتور گفتار وجود ندارد.');}}}><Volume2 size={13}/> راه‌اندازی صدای فارسی</button>}
         <div className="voice-search"><Search size={14}/><input value={voiceSearch} onChange={e=>setVoiceSearch(e.target.value)} placeholder="جست‌وجوی صداها و زبان‌ها"/></div>
         {speakers.map((speaker,i)=><div className="speaker-card" key={speaker.id}>
           <div className="speaker-title"><div className={`avatar avatar-${i%4}`}>{i+1}</div><input aria-label="نام گوینده" value={speaker.name} onChange={e=>updateSpeaker(speaker.id,{name:e.target.value})}/><button className="icon-btn danger" aria-label="حذف گوینده" disabled={speakers.length===1} onClick={()=>removeSpeaker(speaker.id)}><Trash2 size={15}/></button></div>
