@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+type PersianTtsPlugin = { speak(options: { text: string; voiceId: string; speed: number; pitch: number; volume: number }): Promise<void>; stop(): Promise<void> };
+const PersianTTS = registerPlugin<PersianTtsPlugin>('PersianTTS');
+const bundledPersianVoices = [
+  { id: 'amir', name: 'امیر · صدای مردانه' },
+  { id: 'gyro', name: 'گیرو · صدای متفاوت' },
+  { id: 'ganji', name: 'گنجی · صدای متفاوت' }
+];
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import {
   AudioLines, Play, Pause, Square, Plus, Trash2, Users, WandSparkles,
@@ -13,8 +21,8 @@ type Project = { schema: 'voicecast-project'; version: 1; title: string; mode: s
 const tones = ['روایی', 'حماسی', 'آرام', 'احساسی', 'نمایشی'];
 const makeId = () => Date.now() + Math.floor(Math.random() * 100000);
 const defaults: Speaker[] = [
-  { id: 1, name: 'راوی', voiceURI: '', rate: 0.92, pitch: 1, tone: 'روایی', volume: 1 },
-  { id: 2, name: 'شخصیت دوم', voiceURI: '', rate: 1, pitch: 1.08, tone: 'حماسی', volume: 1 }
+  { id: 1, name: 'راوی', voiceURI: 'fa:amir', rate: 0.92, pitch: 1, tone: 'روایی', volume: 1 },
+  { id: 2, name: 'شخصیت دوم', voiceURI: 'fa:gyro', rate: 1, pitch: 1.08, tone: 'حماسی', volume: 1 }
 ];
 const sample: Turn[] = [
   { id: 1, speakerId: 1, text: 'به نام خداوند جان و خرد', pauseAfter: 0.5 },
@@ -54,6 +62,7 @@ export default function App() {
     let active = true;
     if (Capacitor.isNativePlatform()) {
       setSupported(true);
+      setNotice('سه صدای فارسی داخلی آماده‌اند؛ برای پخش به موتور گفتار گوشی نیاز نیست.');
       TextToSpeech.getSupportedVoices().then(result => {
         if (active) setVoices(result.voices || []);
       }).catch(() => {
@@ -98,8 +107,9 @@ export default function App() {
     } catch { setNotice('فضای ذخیره‌سازی مرورگر پر شده است؛ پروژه را به‌صورت فایل JSON ذخیره کنید.'); }
   }, [speakers, turns, mode, title]);
 
-  const persianVoices = useMemo(() => voices.filter(v => /^fa([_-]|$)/i.test(v.lang) || /persian|farsi|فارسی/i.test(v.name)), [voices]);
+  const persianVoices = useMemo(() => Capacitor.isNativePlatform() ? bundledPersianVoices : voices.filter(v => /^fa([_-]|$)/i.test(v.lang) || /persian|farsi|فارسی/i.test(v.name)), [voices]);
   const filteredVoices = useMemo(() => voices.filter(v => (v.name + ' ' + v.lang).toLowerCase().includes(voiceSearch.toLowerCase())), [voices, voiceSearch]);
+  const filteredBundledVoices = bundledPersianVoices.filter(v => (v.name + ' ' + v.id).toLowerCase().includes(voiceSearch.toLowerCase()));
   const wordCount = turns.reduce((n, t) => n + t.text.trim().split(/\s+/).filter(Boolean).length, 0);
   const charCount = turns.reduce((n, t) => n + t.text.length, 0);
   const estimatedSeconds = Math.max(1, Math.round(charCount / 12));
@@ -177,7 +187,7 @@ export default function App() {
   function stop() {
     token.current++;
     window.speechSynthesis?.cancel();
-    if (Capacitor.isNativePlatform()) void TextToSpeech.stop();
+    if (Capacitor.isNativePlatform()) { void TextToSpeech.stop(); void PersianTTS.stop(); }
     setPlaying(false); setPaused(false); setCurrentTurn(-1);
     setNotice('اجرا متوقف شد.');
   }
@@ -192,7 +202,7 @@ export default function App() {
     if (!native && !supported) { setNotice('پخش گفتار در این مرورگر پشتیبانی نمی‌شود.'); return; }
     const queue = sourceTurns.map((turn, index) => ({ turn, index })).filter(x => x.turn.text.trim()).filter(x => x.index >= startIndex);
     if (!queue.length) { setNotice('برای اجرا، حداقل یک دیالوگ دارای متن لازم است.'); return; }
-    if (native) await TextToSpeech.stop().catch(() => {});
+    if (native) { await TextToSpeech.stop().catch(() => {}); await PersianTTS.stop().catch(() => {}); }
     else window.speechSynthesis.cancel();
     const run = ++token.current;
     setPlaying(true); setPaused(false);
@@ -203,7 +213,9 @@ export default function App() {
       const lang = detectLanguage(turn.text);
       setCurrentTurn(index);
       try {
-        if (native) {
+        if (native && lang === 'fa-IR') {
+          await PersianTTS.speak({ text: turn.text, voiceId: (speaker?.voiceURI || 'fa:amir').replace('fa:', ''), speed: speaker?.rate ?? 1, pitch: speaker?.pitch ?? 1, volume: speaker?.volume ?? 1 });
+        } else if (native) {
           // Do not block playback based on getSupportedLanguages(): some Android engines
           // report locale tags with different region/underscore formats. Let the native
           // engine resolve the requested BCP-47 locale and report a real synthesis error.
@@ -227,7 +239,7 @@ export default function App() {
       } catch {
         if (run !== token.current) return;
         setPlaying(false); setPaused(false);
-        setNotice(native ? (lang === 'fa-IR' ? 'صدای فارسی در موتور گفتار گوشی موجود یا فعال نیست. دکمهٔ «راه‌اندازی صدای فارسی» را بزن؛ متن انگلیسی با صدای انگلیسی اجرا می‌شود.' : 'صدای انگلیسی در موتور گفتار گوشی در دسترس نیست؛ موتور گفتار اندروید را بررسی کن.') : 'پخش این بخش با خطا روبه‌رو شد.');
+        setNotice(native ? (lang === 'fa-IR' ? 'اجرای صدای فارسی داخلی ناموفق بود؛ فضای ذخیره‌سازی و نصب برنامه را بررسی کن.' : 'صدای انگلیسی در موتور گفتار گوشی در دسترس نیست؛ موتور گفتار اندروید را بررسی کن.') : 'پخش این بخش با خطا روبه‌رو شد.');
         return;
       }
       if (run !== token.current) return;
@@ -309,17 +321,17 @@ export default function App() {
 
       <aside className="panel speakers-panel">
         <div className="section-head"><div><span className="step">۲</span><div><h2>گروه گویندگان</h2><p>{speakers.length} نقش تعریف شده</p></div></div><button className="icon-btn" onClick={addSpeaker} aria-label="افزودن گوینده"><Plus size={18}/></button></div>
-        <div className={persianVoices.length?'voice-note good':'voice-note'}><Volume2 size={16}/><span>{persianVoices.length ? `${persianVoices.length} صدای فارسی شناسایی شد` : 'تشخیص خودکار فارسی و انگلیسی؛ صدای فارسی به موتور گفتار گوشی وابسته است'}</span></div>
-        {Capacitor.isNativePlatform() && <button className="test-voice" onClick={async()=>{try{await TextToSpeech.openInstall();setNotice('صفحهٔ راه‌اندازی موتور گفتار باز شد. اگر بستهٔ فارسی ارائه شد، آن را نصب کن.');}catch{setNotice('امکان باز کردن راه‌اندازی موتور گفتار وجود ندارد.');}}}><Volume2 size={13}/> راه‌اندازی صدای فارسی</button>}
+        <div className={persianVoices.length?'voice-note good':'voice-note'}><Volume2 size={16}/><span>{persianVoices.length ? `${persianVoices.length} صدای فارسی شناسایی شد` : 'سه مدل صدای فارسی داخلی؛ مستقل از صدای نصب‌شده روی گوشی'}</span></div>
+        {Capacitor.isNativePlatform() && <div className="voice-note good"><Volume2 size={15}/><span>صداهای فارسی داخل برنامه هستند و آفلاین اجرا می‌شوند.</span></div>}
         <div className="voice-search"><Search size={14}/><input value={voiceSearch} onChange={e=>setVoiceSearch(e.target.value)} placeholder="جست‌وجوی صداها و زبان‌ها"/></div>
         {speakers.map((speaker,i)=><div className="speaker-card" key={speaker.id}>
           <div className="speaker-title"><div className={`avatar avatar-${i%4}`}>{i+1}</div><input aria-label="نام گوینده" value={speaker.name} onChange={e=>updateSpeaker(speaker.id,{name:e.target.value})}/><button className="icon-btn danger" aria-label="حذف گوینده" disabled={speakers.length===1} onClick={()=>removeSpeaker(speaker.id)}><Trash2 size={15}/></button></div>
-          <label>صدای دستگاه</label><select value={speaker.voiceURI} onChange={e=>updateSpeaker(speaker.id,{voiceURI:e.target.value})}><option value="">انتخاب خودکار</option>{filteredVoices.map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}</select>
+          <label>صدای دستگاه</label><select value={speaker.voiceURI} onChange={e=>updateSpeaker(speaker.id,{voiceURI:e.target.value})}>{Capacitor.isNativePlatform() ? <>{filteredBundledVoices.map(v=><option key={v.id} value={`fa:${v.id}`}>{v.name}</option>)}</> : <><option value="">انتخاب خودکار</option>{filteredVoices.map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}</>}</select>
           <div className="range-line"><label>سرعت بیان</label><span>{speaker.rate.toFixed(1)}×</span></div><input className="range" type="range" min="0.6" max="1.4" step="0.1" value={speaker.rate} onChange={e=>updateSpeaker(speaker.id,{rate:Number(e.target.value)})}/>
           <div className="range-line"><label>زیر و بمی</label><span>{speaker.pitch.toFixed(1)}</span></div><input className="range" type="range" min="0.6" max="1.5" step="0.1" value={speaker.pitch} onChange={e=>updateSpeaker(speaker.id,{pitch:Number(e.target.value)})}/>
           <div className="range-line"><label>بلندی صدا</label><span>{Math.round(speaker.volume*100)}٪</span></div><input className="range" type="range" min="0" max="1" step="0.05" value={speaker.volume} onChange={e=>updateSpeaker(speaker.id,{volume:Number(e.target.value)})}/>
           <label>حال‌وهوای نقش <span className="muted">(برچسب راهنما)</span></label><div className="chips small">{tones.map(t=><button key={t} className={speaker.tone===t?'chip active':'chip'} onClick={()=>updateSpeaker(speaker.id,{tone:t})}>{t}</button>)}</div>
-          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await TextToSpeech.stop();const vi=voices.findIndex(x=>x.voiceURI===speaker.voiceURI && x.lang.toLowerCase().startsWith('fa'));await TextToSpeech.speak({text:`سلام. من ${speaker.name} هستم.`,lang:'fa-IR',rate:speaker.rate,pitch:speaker.pitch,volume:speaker.volume,...(vi>=0?{voice:vi}:{})});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
+          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await PersianTTS.stop();await PersianTTS.speak({text:`سلام. من ${speaker.name} هستم.`,voiceId:(speaker.voiceURI || 'fa:amir').replace('fa:',''),speed:speaker.rate,pitch:speaker.pitch,volume:speaker.volume});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
         </div>)}
         <button className="add-speaker" onClick={addSpeaker}><Plus size={16}/> افزودن گوینده</button>
       </aside>
