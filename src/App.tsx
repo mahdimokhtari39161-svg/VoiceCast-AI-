@@ -204,9 +204,9 @@ export default function App() {
       setCurrentTurn(index);
       try {
         if (native) {
-          if (supportedLanguages.length && !languageIsAvailable(lang)) {
-            throw new Error(lang === 'fa-IR' ? 'PERSIAN_VOICE_MISSING' : 'VOICE_MISSING');
-          }
+          // Do not block playback based on getSupportedLanguages(): some Android engines
+          // report locale tags with different region/underscore formats. Let the native
+          // engine resolve the requested BCP-47 locale and report a real synthesis error.
           const voiceIndex = voices.findIndex(v => v.voiceURI === speaker?.voiceURI && v.lang.toLowerCase().startsWith(lang.split('-')[0]));
           await TextToSpeech.speak({
             text: turn.text, lang, rate: speaker?.rate ?? 1,
