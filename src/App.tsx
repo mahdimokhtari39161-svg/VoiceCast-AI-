@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-type PersianTtsPlugin = { speak(options: { text: string; voiceId: string; speed: number; pitch: number; volume: number }): Promise<void>; stop(): Promise<void> };
+type PersianTtsPlugin = { speak(options: { text: string; voiceId: string; speed: number; pitch: number; volume: number }): Promise<void>; stop(): Promise<void>; pause(): Promise<void>; resume(): Promise<void> };
 const PersianTTS = registerPlugin<PersianTtsPlugin>('PersianTTS');
 const bundledPersianVoices = [
   { id: 'amir', name: 'امیر · صدای مردانه' },
@@ -192,8 +192,8 @@ export default function App() {
     setPlaying(false); setPaused(false); setCurrentTurn(-1);
     setNotice('اجرا متوقف شد.');
   }
-  function pauseResume() {
-    if (Capacitor.isNativePlatform()) { setNotice('مکث در موتور گفتار اندروید در این نسخه پشتیبانی نمی‌شود؛ برای قطع صدا «توقف» را بزنید.'); return; }
+  async function pauseResume() {
+    if (Capacitor.isNativePlatform()) { try { if (paused) await PersianTTS.resume(); else await PersianTTS.pause(); setPaused(!paused); } catch { setNotice('تغییر وضعیت پخش ممکن نشد.'); } return; }
     if (!('speechSynthesis' in window)) return;
     if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); setPaused(false); }
     else { window.speechSynthesis.pause(); setPaused(true); }
@@ -343,7 +343,7 @@ export default function App() {
 
     <section className="bottom-bar">
       <div className="bottom-copy"><div className="play-symbol"><AudioLines size={20}/></div><div><strong>{playing ? `در حال اجرا · بخش ${currentTurn+1}` : 'پیش‌نمایش اجرای متن'}</strong><small>{notice}</small></div></div>
-      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<>{!Capacitor.isNativePlatform() && <button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button>}<button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={playMain} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
+      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<><button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button><button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={playMain} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
     </section>
     <div className="notice-line"><Clock3 size={14}/> {charCount.toLocaleString('fa-IR')} نویسه · زمان تخمینی {Math.ceil(estimatedSeconds/60).toLocaleString('fa-IR')} دقیقه · ذخیره خودکار روی همین دستگاه</div>
     <div className="notice-line"><CircleHelp size={14}/> پیش‌نمایش از صداهای نصب‌شده در مرورگر استفاده می‌کند. این نسخه هنوز خروجی MP3، موسیقی و هم‌خوانی چندصدایی واقعی ندارد.</div>
