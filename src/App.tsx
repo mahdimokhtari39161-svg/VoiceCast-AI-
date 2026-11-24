@@ -117,11 +117,12 @@ export default function App() {
 
   function detectLanguage(text: string) { return /[\u0600-\u06FF]/.test(text) ? 'fa-IR' : 'en-US'; }
   function languageIsAvailable(lang: string) { return supportedLanguages.some(item => item.toLowerCase() === lang.toLowerCase() || item.toLowerCase() === lang.split('-')[0].toLowerCase() || item.toLowerCase().startsWith(lang.split('-')[0].toLowerCase() + '-')); }
+  function toneAdjustments(tone: string) { const presets: Record<string, { speed: number; pitch: number }> = { 'روایی': { speed: 1, pitch: 1 }, 'حماسی': { speed: 0.94, pitch: 0.9 }, 'آرام': { speed: 0.84, pitch: 0.96 }, 'احساسی': { speed: 0.92, pitch: 1.08 }, 'نمایشی': { speed: 0.9, pitch: 1.14 } }; return presets[tone] || presets['روایی']; }
   function updateSpeaker(id: number, patch: Partial<Speaker>) { setSpeakers(old => old.map(s => s.id === id ? { ...s, ...patch } : s)); }
   function updateTurn(id: number, patch: Partial<Turn>) { setTurns(old => old.map(t => t.id === id ? { ...t, ...patch } : t)); }
   function addSpeaker() {
     const id = Math.max(0, ...speakers.map(s => s.id)) + 1;
-    setSpeakers(old => [...old, { id, name: `گوینده ${id}`, voiceURI: '', rate: 1, pitch: 1, tone: 'روایی', volume: 1 }]);
+    setSpeakers(old => [...old, { id, name: `گوینده ${id}`, voiceURI: `fa:${bundledPersianVoices[speakers.length % bundledPersianVoices.length].id}`, rate: 1, pitch: 1, tone: 'روایی', volume: 1 }]);
     setNotice('گویندهٔ جدید اضافه شد.');
   }
   function removeSpeaker(id: number) {
@@ -211,18 +212,21 @@ export default function App() {
       if (run !== token.current) return;
       const speaker = speakers.find(s => s.id === turn.speakerId) || speakers[0];
       const lang = detectLanguage(turn.text);
+      const tone = toneAdjustments(speaker?.tone || 'روایی');
+      const effectiveSpeed = Math.max(0.6, Math.min(1.5, (speaker?.rate ?? 1) * tone.speed));
+      const effectivePitch = Math.max(0.6, Math.min(1.5, (speaker?.pitch ?? 1) * tone.pitch));
       setCurrentTurn(index);
       try {
         if (native && lang === 'fa-IR') {
-          await PersianTTS.speak({ text: turn.text, voiceId: (speaker?.voiceURI || 'fa:amir').replace('fa:', ''), speed: speaker?.rate ?? 1, pitch: speaker?.pitch ?? 1, volume: speaker?.volume ?? 1 });
+          await PersianTTS.speak({ text: turn.text, voiceId: (speaker?.voiceURI || 'fa:amir').replace('fa:', ''), speed: effectiveSpeed, pitch: effectivePitch, volume: speaker?.volume ?? 1 });
         } else if (native) {
           // Do not block playback based on getSupportedLanguages(): some Android engines
           // report locale tags with different region/underscore formats. Let the native
           // engine resolve the requested BCP-47 locale and report a real synthesis error.
           const voiceIndex = voices.findIndex(v => v.voiceURI === speaker?.voiceURI && v.lang.toLowerCase().startsWith(lang.split('-')[0]));
           await TextToSpeech.speak({
-            text: turn.text, lang, rate: speaker?.rate ?? 1,
-            pitch: speaker?.pitch ?? 1, volume: speaker?.volume ?? 1,
+            text: turn.text, lang, rate: effectiveSpeed,
+            pitch: effectivePitch, volume: speaker?.volume ?? 1,
             ...(voiceIndex >= 0 ? { voice: voiceIndex } : {})
           });
         } else {
@@ -331,7 +335,7 @@ export default function App() {
           <div className="range-line"><label>زیر و بمی</label><span>{speaker.pitch.toFixed(1)}</span></div><input className="range" type="range" min="0.6" max="1.5" step="0.1" value={speaker.pitch} onChange={e=>updateSpeaker(speaker.id,{pitch:Number(e.target.value)})}/>
           <div className="range-line"><label>بلندی صدا</label><span>{Math.round(speaker.volume*100)}٪</span></div><input className="range" type="range" min="0" max="1" step="0.05" value={speaker.volume} onChange={e=>updateSpeaker(speaker.id,{volume:Number(e.target.value)})}/>
           <label>حال‌وهوای نقش <span className="muted">(برچسب راهنما)</span></label><div className="chips small">{tones.map(t=><button key={t} className={speaker.tone===t?'chip active':'chip'} onClick={()=>updateSpeaker(speaker.id,{tone:t})}>{t}</button>)}</div>
-          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await PersianTTS.stop();await PersianTTS.speak({text:`سلام. من ${speaker.name} هستم.`,voiceId:(speaker.voiceURI || 'fa:amir').replace('fa:',''),speed:speaker.rate,pitch:speaker.pitch,volume:speaker.volume});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
+          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await PersianTTS.stop();await PersianTTS.speak({text:`سلام. من ${speaker.name} هستم.`,voiceId:(speaker.voiceURI || 'fa:amir').replace('fa:',''),speed:speaker.rate * toneAdjustments(speaker.tone).speed,pitch:speaker.pitch * toneAdjustments(speaker.tone).pitch,volume:speaker.volume});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
         </div>)}
         <button className="add-speaker" onClick={addSpeaker}><Plus size={16}/> افزودن گوینده</button>
       </aside>
