@@ -164,9 +164,9 @@ export default function App() {
     if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); setPaused(false); }
     else { window.speechSynthesis.pause(); setPaused(true); }
   }
-  function playFrom(startIndex = 0) {
+  function playFrom(startIndex = 0, sourceTurns: Turn[] = turns) {
     if (!supported) { setNotice('پخش گفتار در این مرورگر پشتیبانی نمی‌شود.'); return; }
-    const queue = turns.map((turn, index) => ({ turn, index })).filter(x => x.turn.text.trim()).filter(x => x.index >= startIndex);
+    const queue = sourceTurns.map((turn, index) => ({ turn, index })).filter(x => x.turn.text.trim()).filter(x => x.index >= startIndex);
     if (!queue.length) { setNotice('برای اجرا، حداقل یک دیالوگ دارای متن لازم است.'); return; }
     window.speechSynthesis.cancel();
     const run = ++token.current;
@@ -196,6 +196,21 @@ export default function App() {
       window.speechSynthesis.speak(utterance);
     };
     next();
+  }
+  function playMain() {
+    const source = rawText.trim();
+    if (!source) { playFrom(0); return; }
+    const chunks = splitRule === 'paragraph'
+      ? source.split(/\\n\\s*\\n/).map(x => x.trim()).filter(Boolean)
+      : source.split(/\\n+/).flatMap(line => line.split(/(?<=[.!؟؛])\\s+/)).map(x => x.trim()).filter(Boolean);
+    const nextTurns: Turn[] = (chunks.length ? chunks : [source]).map((text, i) => ({
+      id: makeId() + i,
+      speakerId: assignRule === 'round' ? speakers[i % speakers.length].id : speakers[0].id,
+      text, pauseAfter: 0.4
+    }));
+    setTurns(nextTurns);
+    setNotice('متن آماده شد؛ پخش در حال شروع است…');
+    playFrom(0, nextTurns);
   }
   function resetProject() {
     stop(); setSpeakers(defaults); setTurns([]); setRawText(''); setTitle('پروژه جدید'); setMode('نمایشی'); setNotice('پروژهٔ جدید ساخته شد.');
@@ -270,7 +285,7 @@ export default function App() {
 
     <section className="bottom-bar">
       <div className="bottom-copy"><div className="play-symbol"><AudioLines size={20}/></div><div><strong>{playing ? `در حال اجرا · بخش ${currentTurn+1}` : 'پیش‌نمایش اجرای متن'}</strong><small>{notice}</small></div></div>
-      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<><button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button><button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={()=>playFrom(0)} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
+      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<><button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button><button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={playMain} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
     </section>
     <div className="notice-line"><Clock3 size={14}/> {charCount.toLocaleString('fa-IR')} نویسه · زمان تخمینی {Math.ceil(estimatedSeconds/60).toLocaleString('fa-IR')} دقیقه · ذخیره خودکار روی همین دستگاه</div>
     <div className="notice-line"><CircleHelp size={14}/> پیش‌نمایش از صداهای نصب‌شده در مرورگر استفاده می‌کند. این نسخه هنوز خروجی MP3، موسیقی و هم‌خوانی چندصدایی واقعی ندارد.</div>
