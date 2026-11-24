@@ -46,6 +46,8 @@ public class PersianTTSPlugin extends Plugin {
                 File model = new File(modelDir, "model.onnx");
                 File tokens = new File(modelDir, "tokens.txt");
                 File espeak = new File(root, "espeak-ng-data");
+                if (!model.exists() || !tokens.exists()) copyAssetTree("persian-tts/" + voiceId, modelDir);
+                if (!new File(espeak, "phontab").exists()) copyAssetTree("persian-tts/espeak-ng-data", espeak);
                 if (!model.exists() || !tokens.exists() || !new File(espeak, "phontab").exists()) {
                     throw new IllegalStateException("فایل‌های صدای فارسی کامل نیستند.");
                 }
