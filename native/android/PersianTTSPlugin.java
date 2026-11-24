@@ -30,9 +30,9 @@ public class PersianTTSPlugin extends Plugin {
     public void speak(PluginCall call) {
         final String text = call.getString("text", "");
         final String voiceId = call.getString("voiceId", "amir");
-        final float speed = (float) call.getDouble("speed", 1.0);
-        final float pitch = (float) call.getDouble("pitch", 1.0);
-        final float volume = (float) call.getDouble("volume", 1.0);
+        final float speed = call.getDouble("speed", 1.0).floatValue();
+        final float pitch = call.getDouble("pitch", 1.0).floatValue();
+        final float volume = call.getDouble("volume", 1.0).floatValue();
         if (text.trim().isEmpty()) { call.reject("متنی برای خواندن وجود ندارد."); return; }
         if (!voiceId.matches("amir|gyro|ganji")) { call.reject("مدل صدای انتخاب‌شده معتبر نیست."); return; }
         final int token = runToken.incrementAndGet();
@@ -63,15 +63,14 @@ public class PersianTTSPlugin extends Plugin {
                 OfflineTtsConfig config = new OfflineTtsConfig();
                 config.setModel(modelConfig);
                 config.setMaxNumSentences(1);
-                tts = new OfflineTts(config);
+                tts = new OfflineTts(getContext().getAssets(), config);
 
                 GenerationConfig generation = new GenerationConfig();
                 generation.setSid(0);
                 generation.setSpeed(Math.max(0.65f, Math.min(1.5f, speed)));
                 generation.setSilenceScale(0.2f);
                 final int activeToken = token;
-                GeneratedAudio generated = tts.generateWithConfigAndCallback(text, generation,
-                    (OfflineTtsCallback) samples -> activeToken == runToken.get() ? 1 : 0);
+                GeneratedAudio generated = tts.generateWithConfig(text, generation);
                 if (token != runToken.get()) { call.reject("پخش متوقف شد."); return; }
 
                 float[] samples = generated.getSamples();
