@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import {
   AudioLines, Play, Pause, Square, Plus, Trash2, Users, WandSparkles,
   Volume2, Download, Mic2, Sparkles, CircleHelp, FileJson, FileText,
@@ -48,15 +50,28 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let active = true;
+    if (Capacitor.isNativePlatform()) {
+      setSupported(true);
+      TextToSpeech.getSupportedVoices().then(result => {
+        if (active) setVoices(result.voices || []);
+      }).catch(() => {
+        if (active) setNotice('موتور گفتار گوشی در دسترس نیست؛ موتور تبدیل متن به گفتار را در تنظیمات اندروید فعال کنید.');
+      });
+      TextToSpeech.isLanguageSupported({ lang: 'fa-IR' }).then(result => {
+        if (active && !result.supported) setNotice('زبان فارسی در موتور گفتار گوشی نصب نیست. در تنظیمات تبدیل متن به گفتار، صدای فارسی را نصب کنید.');
+      }).catch(() => {});
+      return () => { active = false; void TextToSpeech.stop(); };
+    }
     if (!('speechSynthesis' in window)) {
       setSupported(false);
-      setNotice('مرورگر شما از پخش گفتار پشتیبانی نمی‌کند؛ از Chrome استفاده کنید.');
-      return;
+      setNotice('مرورگر از پخش گفتار پشتیبانی نمی‌کند.');
+      return () => { active = false; };
     }
     const load = () => setVoices(window.speechSynthesis.getVoices());
     load();
     window.speechSynthesis.addEventListener?.('voiceschanged', load);
-    return () => { window.speechSynthesis.removeEventListener?.('voiceschanged', load); window.speechSynthesis.cancel(); };
+    return () => { active = false; window.speechSynthesis.removeEventListener?.('voiceschanged', load); window.speechSynthesis.cancel(); };
   }, []);
 
   useEffect(() => {
@@ -156,53 +171,69 @@ export default function App() {
   function stop() {
     token.current++;
     window.speechSynthesis?.cancel();
+    if (Capacitor.isNativePlatform()) void TextToSpeech.stop();
     setPlaying(false); setPaused(false); setCurrentTurn(-1);
     setNotice('اجرا متوقف شد.');
   }
   function pauseResume() {
+    if (Capacitor.isNativePlatform()) { setNotice('مکث در موتور گفتار اندروید در این نسخه پشتیبانی نمی‌شود؛ برای قطع صدا «توقف» را بزنید.'); return; }
     if (!('speechSynthesis' in window)) return;
     if (window.speechSynthesis.paused) { window.speechSynthesis.resume(); setPaused(false); }
     else { window.speechSynthesis.pause(); setPaused(true); }
   }
-  function playFrom(startIndex = 0, sourceTurns: Turn[] = turns) {
-    if (!supported) { setNotice('پخش گفتار در این مرورگر پشتیبانی نمی‌شود.'); return; }
+  async function playFrom(startIndex = 0, sourceTurns: Turn[] = turns) {
+    const native = Capacitor.isNativePlatform();
+    if (!native && !supported) { setNotice('پخش گفتار در این مرورگر پشتیبانی نمی‌شود.'); return; }
     const queue = sourceTurns.map((turn, index) => ({ turn, index })).filter(x => x.turn.text.trim()).filter(x => x.index >= startIndex);
     if (!queue.length) { setNotice('برای اجرا، حداقل یک دیالوگ دارای متن لازم است.'); return; }
-    window.speechSynthesis.cancel();
+    if (native) await TextToSpeech.stop().catch(() => {});
+    else window.speechSynthesis.cancel();
     const run = ++token.current;
-    let cursor = 0;
     setPlaying(true); setPaused(false);
-    setNotice(persianVoices.length ? 'در حال اجرای سناریو با صداهای دستگاه…' : 'صدای فارسی دستگاه پیدا نشد؛ ممکن است تلفظ مناسب نباشد.');
-    const next = () => {
+    setNotice(native ? 'در حال اجرا با موتور گفتار اندروید…' : 'در حال اجرا با صدای دستگاه…');
+    for (const { turn, index } of queue) {
       if (run !== token.current) return;
-      if (cursor >= queue.length) {
-        setPlaying(false); setPaused(false); setCurrentTurn(-1); setNotice('اجرای سناریو به پایان رسید.'); return;
-      }
-      const { turn, index } = queue[cursor++];
       const speaker = speakers.find(s => s.id === turn.speakerId) || speakers[0];
       setCurrentTurn(index);
-      const utterance = new SpeechSynthesisUtterance(turn.text);
-      utterance.lang = 'fa-IR'; utterance.rate = speaker?.rate ?? 1; utterance.pitch = speaker?.pitch ?? 1; utterance.volume = speaker?.volume ?? 1;
-      const voice = voices.find(v => v.voiceURI === speaker?.voiceURI);
-      if (voice) utterance.voice = voice;
-      utterance.onend = () => {
+      try {
+        if (native) {
+          const voiceIndex = voices.findIndex(v => v.voiceURI === speaker?.voiceURI);
+          await TextToSpeech.speak({
+            text: turn.text, lang: 'fa-IR', rate: speaker?.rate ?? 1,
+            pitch: speaker?.pitch ?? 1, volume: speaker?.volume ?? 1,
+            ...(voiceIndex >= 0 ? { voice: voiceIndex } : {})
+          });
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const utterance = new SpeechSynthesisUtterance(turn.text);
+            utterance.lang = 'fa-IR'; utterance.rate = speaker?.rate ?? 1; utterance.pitch = speaker?.pitch ?? 1; utterance.volume = speaker?.volume ?? 1;
+            const voice = voices.find(v => v.voiceURI === speaker?.voiceURI);
+            if (voice) utterance.voice = voice;
+            utterance.onend = () => resolve();
+            utterance.onerror = event => event.error === 'canceled' ? resolve() : reject(new Error(event.error));
+            window.speechSynthesis.speak(utterance);
+          });
+        }
+      } catch {
         if (run !== token.current) return;
-        const wait = Math.max(0, Math.min(5, turn.pauseAfter || 0)) * 1000;
-        window.setTimeout(next, wait);
-      };
-      utterance.onerror = event => {
-        if (run === token.current) { setPlaying(false); setPaused(false); setNotice(event.error === 'canceled' ? 'اجرا لغو شد.' : 'پخش این دیالوگ با خطا مواجه شد.'); }
-      };
-      window.speechSynthesis.speak(utterance);
-    };
-    next();
+        setPlaying(false); setPaused(false);
+        setNotice(native ? 'پخش ناموفق بود. صدای فارسی را در تنظیمات گفتار اندروید نصب یا فعال کنید.' : 'پخش این بخش با خطا روبه‌رو شد.');
+        return;
+      }
+      if (run !== token.current) return;
+      const wait = Math.max(0, Math.min(5, turn.pauseAfter || 0)) * 1000;
+      if (wait) await new Promise(resolve => window.setTimeout(resolve, wait));
+    }
+    if (run === token.current) {
+      setPlaying(false); setPaused(false); setCurrentTurn(-1); setNotice('اجرای سناریو به پایان رسید.');
+    }
   }
   function playMain() {
     const source = rawText.trim();
     if (!source) { playFrom(0); return; }
     const chunks = splitRule === 'paragraph'
-      ? source.split(/\\n\\s*\\n/).map(x => x.trim()).filter(Boolean)
-      : source.split(/\\n+/).flatMap(line => line.split(/(?<=[.!؟؛])\\s+/)).map(x => x.trim()).filter(Boolean);
+      ? source.split(/\n\s*\n/).map(x => x.trim()).filter(Boolean)
+      : source.split(/\n+/).flatMap(line => line.split(/(?<=[.!؟؛])\s+/)).map(x => x.trim()).filter(Boolean);
     const nextTurns: Turn[] = (chunks.length ? chunks : [source]).map((text, i) => ({
       id: makeId() + i,
       speakerId: assignRule === 'round' ? speakers[i % speakers.length].id : speakers[0].id,
@@ -277,7 +308,7 @@ export default function App() {
           <div className="range-line"><label>زیر و بمی</label><span>{speaker.pitch.toFixed(1)}</span></div><input className="range" type="range" min="0.6" max="1.5" step="0.1" value={speaker.pitch} onChange={e=>updateSpeaker(speaker.id,{pitch:Number(e.target.value)})}/>
           <div className="range-line"><label>بلندی صدا</label><span>{Math.round(speaker.volume*100)}٪</span></div><input className="range" type="range" min="0" max="1" step="0.05" value={speaker.volume} onChange={e=>updateSpeaker(speaker.id,{volume:Number(e.target.value)})}/>
           <label>حال‌وهوای نقش <span className="muted">(برچسب راهنما)</span></label><div className="chips small">{tones.map(t=><button key={t} className={speaker.tone===t?'chip active':'chip'} onClick={()=>updateSpeaker(speaker.id,{tone:t})}>{t}</button>)}</div>
-          <button className="test-voice" onClick={()=>{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
+          <button className="test-voice" onClick={async()=>{try{if(Capacitor.isNativePlatform()){await TextToSpeech.stop();const vi=voices.findIndex(x=>x.voiceURI===speaker.voiceURI);await TextToSpeech.speak({text:`سلام. من ${speaker.name} هستم.`,lang:'fa-IR',rate:speaker.rate,pitch:speaker.pitch,volume:speaker.volume,...(vi>=0?{voice:vi}:{})});}else{const u=new SpeechSynthesisUtterance(`سلام. من ${speaker.name} هستم.`);u.lang='fa-IR';u.rate=speaker.rate;u.pitch=speaker.pitch;u.volume=speaker.volume;const v=voices.find(x=>x.voiceURI===speaker.voiceURI);if(v)u.voice=v;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}}catch{setNotice('آزمایش صدا ناموفق بود؛ موتور گفتار و صدای فارسی گوشی را بررسی کنید.');}}} disabled={!supported}><Volume2 size={13}/> آزمایش این گوینده</button>
         </div>)}
         <button className="add-speaker" onClick={addSpeaker}><Plus size={16}/> افزودن گوینده</button>
       </aside>
@@ -285,7 +316,7 @@ export default function App() {
 
     <section className="bottom-bar">
       <div className="bottom-copy"><div className="play-symbol"><AudioLines size={20}/></div><div><strong>{playing ? `در حال اجرا · بخش ${currentTurn+1}` : 'پیش‌نمایش اجرای متن'}</strong><small>{notice}</small></div></div>
-      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<><button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button><button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={playMain} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
+      <div className="actions"><button className="export-btn" onClick={exportProject}><Download size={16}/> پروژه</button>{playing?<><>{!Capacitor.isNativePlatform() && <button className="play-btn" onClick={pauseResume}>{paused?<Play size={17}/>:<Pause size={17}/>} {paused?'ادامه':'مکث'}</button>}<button className="stop-btn" onClick={stop}><Square size={15}/> توقف</button></>:<button className="play-btn" onClick={playMain} disabled={!supported}><Play size={17} fill="currentColor"/> اجرای سناریو</button>}</div>
     </section>
     <div className="notice-line"><Clock3 size={14}/> {charCount.toLocaleString('fa-IR')} نویسه · زمان تخمینی {Math.ceil(estimatedSeconds/60).toLocaleString('fa-IR')} دقیقه · ذخیره خودکار روی همین دستگاه</div>
     <div className="notice-line"><CircleHelp size={14}/> پیش‌نمایش از صداهای نصب‌شده در مرورگر استفاده می‌کند. این نسخه هنوز خروجی MP3، موسیقی و هم‌خوانی چندصدایی واقعی ندارد.</div>
