@@ -38,6 +38,7 @@ public class MainActivity extends BridgeActivity {
 JAVA
 # Sherpa-ONNX Java API plus Android native runtime.
 grep -q 'jitpack.io' android/build.gradle || sed -i "/mavenCentral()/a\\        maven { url 'https://jitpack.io' }" android/build.gradle
+grep -q 'abiFilters' android/app/build.gradle || sed -i "/defaultConfig {/a\\        ndk { abiFilters 'arm64-v8a' }" android/app/build.gradle
 grep -q 'com.github.k2-fsa:sherpa-onnx' android/app/build.gradle || sed -i "/dependencies {/a\\    implementation('com.github.k2-fsa:sherpa-onnx:v2.0.1') { exclude group: 'com.github.k2-fsa.sherpa-onnx', module: 'sherpa-onnx-jvm' }" android/app/build.gradle
 echo "Offline Persian voices staged:"
 du -sh "$ASSET"
