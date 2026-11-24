@@ -189,7 +189,7 @@ export default function App() {
         <textarea id="source-text" className="source-text" value={rawText} onChange={e=>setRawText(e.target.value)} placeholder="متن فارسی خود را اینجا بچسبانید...&#10;برای تقسیم بهتر، هر پاراگراف را در یک خط جدا بنویسید."/>
         <div className="mode-row">
           <label>قالب اجرا</label>
-          <div className="chips">{['نمایشی','روایی','حماسی','گروهی'].map(x=><button key={x} className={mode===x?'chip active':'chip'} onClick={()=>{setMode(x);setNotice(`قالب «${x}» انتخاب شد. این گزینه فعلاً برچسب سناریو است؛ میکس گروهی در موتور صوتی بعدی اضافه می‌شود.);}}>{x}</button>)}</div>
+          <div className="chips">{['نمایشی','روایی','حماسی','گروهی'].map(x=><button key={x} className={mode===x?'chip active':'chip'} onClick={()=>{setMode(x);setNotice(`قالب «${x}» انتخاب شد. این گزینه فعلاً برچسب سناریو است؛ میکس گروهی در موتور صوتی بعدی اضافه می‌شود.`);}}>{x}</button>)}</div>
         </div>
         <div className="turn-heading"><strong>ترتیب دیالوگ‌ها</strong><span>{turns.length} بخش</span></div>
         <div className="turn-list">
