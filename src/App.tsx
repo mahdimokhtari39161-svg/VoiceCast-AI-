@@ -61,20 +61,11 @@ export default function App() {
   useEffect(() => {
     let active = true;
     if (Capacitor.isNativePlatform()) {
+      // Persian speech is fully bundled; do not initialize or query Android's
+      // system TTS service on startup. It is only used for non-Persian text.
       setSupported(true);
       setNotice('سه صدای فارسی داخلی آماده‌اند؛ برای پخش به موتور گفتار گوشی نیاز نیست.');
-      TextToSpeech.getSupportedVoices().then(result => {
-        if (active) setVoices(result.voices || []);
-      }).catch(() => {
-        if (active) setNotice('موتور گفتار گوشی در دسترس نیست؛ موتور تبدیل متن به گفتار را در تنظیمات اندروید فعال کنید.');
-      });
-      TextToSpeech.getSupportedLanguages().then(result => {
-        if (active) setSupportedLanguages(result.languages || []);
-      }).catch(() => {});
-      TextToSpeech.isLanguageSupported({ lang: 'fa-IR' }).then(result => {
-        if (active && !result.supported) setNotice('صدای فارسی روی موتور گفتار این گوشی پیدا نشد؛ متن انگلیسی همچنان قابل پخش است. برای افزودن فارسی از دکمهٔ «راه‌اندازی صدای فارسی» استفاده کن.');
-      }).catch(() => {});
-      return () => { active = false; void TextToSpeech.stop(); };
+      return () => { active = false; };
     }
     if (!('speechSynthesis' in window)) {
       setSupported(false);
@@ -188,7 +179,7 @@ export default function App() {
   function stop() {
     token.current++;
     window.speechSynthesis?.cancel();
-    if (Capacitor.isNativePlatform()) { void TextToSpeech.stop(); void PersianTTS.stop(); }
+    if (Capacitor.isNativePlatform()) { void PersianTTS.stop(); }
     setPlaying(false); setPaused(false); setCurrentTurn(-1);
     setNotice('اجرا متوقف شد.');
   }
@@ -203,11 +194,11 @@ export default function App() {
     if (!native && !supported) { setNotice('پخش گفتار در این مرورگر پشتیبانی نمی‌شود.'); return; }
     const queue = sourceTurns.map((turn, index) => ({ turn, index })).filter(x => x.turn.text.trim()).filter(x => x.index >= startIndex);
     if (!queue.length) { setNotice('برای اجرا، حداقل یک دیالوگ دارای متن لازم است.'); return; }
-    if (native) { await TextToSpeech.stop().catch(() => {}); await PersianTTS.stop().catch(() => {}); }
+    if (native) { await PersianTTS.stop().catch(() => {}); }
     else window.speechSynthesis.cancel();
     const run = ++token.current;
     setPlaying(true); setPaused(false);
-    setNotice(native ? 'در حال اجرا با موتور گفتار اندروید…' : 'در حال اجرا با صدای دستگاه…');
+    setNotice(native ? 'در حال اجرا با موتور فارسی داخلی…' : 'در حال اجرا با صدای دستگاه…');
     for (const { turn, index } of queue) {
       if (run !== token.current) return;
       const speaker = speakers.find(s => s.id === turn.speakerId) || speakers[0];
@@ -243,7 +234,7 @@ export default function App() {
       } catch {
         if (run !== token.current) return;
         setPlaying(false); setPaused(false);
-        setNotice(native ? (lang === 'fa-IR' ? 'اجرای صدای فارسی داخلی ناموفق بود؛ فضای ذخیره‌سازی و نصب برنامه را بررسی کن.' : 'صدای انگلیسی در موتور گفتار گوشی در دسترس نیست؛ موتور گفتار اندروید را بررسی کن.') : 'پخش این بخش با خطا روبه‌رو شد.');
+        setNotice(native ? (lang === 'fa-IR' ? 'خطای صدای فارسی داخلی؛ برنامه را ببند و دوباره باز کن. اگر تکرار شد، متن کوتاه‌تری آزمایش کن.' : 'صدای انگلیسی در موتور گفتار گوشی در دسترس نیست؛ موتور گفتار اندروید را بررسی کن.') : 'پخش این بخش با خطا روبه‌رو شد.');
         return;
       }
       if (run !== token.current) return;
