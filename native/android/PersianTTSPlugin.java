@@ -58,7 +58,8 @@ public class PersianTTSPlugin extends Plugin {
                 vits.setDataDir(espeak.getAbsolutePath());
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
                 modelConfig.setVits(vits);
-                modelConfig.setNumThreads(Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() - 1)));
+                // Keep inference conservative on mid-range Android devices to avoid memory pressure.
+                modelConfig.setNumThreads(1);
                 modelConfig.setDebug(false);
                 OfflineTtsConfig config = new OfflineTtsConfig();
                 config.setModel(modelConfig);
@@ -94,7 +95,8 @@ public class PersianTTSPlugin extends Plugin {
                         float value = Math.max(-1f, Math.min(1f, samples[offset + i]));
                         pcm[i] = (short) (value * 32767f);
                     }
-                    track.write(pcm, 0, count);
+                    int written = track.write(pcm, 0, count);
+                    if (written < 0) throw new IllegalStateException("خطای خروجی صدا: " + written);
                 }
                 if (token == runToken.get()) {
                     while (track.getPlaybackHeadPosition() < samples.length && token == runToken.get()) {
@@ -104,15 +106,16 @@ public class PersianTTSPlugin extends Plugin {
                 } else {
                     call.reject("پخش متوقف شد.");
                 }
-            } catch (Exception e) {
-                call.reject("خطا در اجرای صدای فارسی: " + (e.getMessage() == null ? "خطای ناشناخته" : e.getMessage()));
+            } catch (Throwable e) {
+                String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                call.reject("خطا در اجرای صدای فارسی: " + detail);
             } finally {
                 if (track != null) {
-                    try { track.pause(); track.flush(); track.stop(); } catch (Exception ignored) {}
-                    try { track.release(); } catch (Exception ignored) {}
+                    try { track.pause(); track.flush(); track.stop(); } catch (Throwable ignored) {}
+                    try { track.release(); } catch (Throwable ignored) {}
                 }
                 if (audioTrack == track) audioTrack = null;
-                if (tts != null) tts.release();
+                if (tts != null) { try { tts.release(); } catch (Throwable ignored) {} }
             }
         });
     }
@@ -141,7 +144,7 @@ public class PersianTTSPlugin extends Plugin {
     private void stopTrack() {
         AudioTrack current = audioTrack;
         if (current != null) {
-            try { current.pause(); current.flush(); current.stop(); } catch (Exception ignored) {}
+            try { current.pause(); current.flush(); current.stop(); } catch (Throwable ignored) {}
         }
     }
 
